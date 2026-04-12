@@ -5,6 +5,7 @@ using System.IO;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityMeshSimplifier;
 
 namespace Brainy.EditorTools
 {
@@ -447,38 +448,9 @@ namespace Brainy.EditorTools
             SceneMeshOptimizerOptions options,
             OptimizationReport report)
         {
-            if (!QuadricErrorMeshSimplifier.TrySimplify(sourceMesh, options, out Mesh optimizedMesh, out MeshSimplificationResult result))
+            if (!QualityFirstMeshSimplifier.TrySimplify(sourceMesh, options, out Mesh optimizedMesh, out MeshSimplificationResult result))
             {
                 report.Messages.Add(result.Message);
-
-                if (options.UsesAnyPreservation)
-                {
-                    SceneMeshOptimizerOptions relaxedOptions = options.WithRelaxedPreservation();
-                    if (QuadricErrorMeshSimplifier.TrySimplify(sourceMesh, relaxedOptions, out optimizedMesh, out MeshSimplificationResult relaxedResult))
-                    {
-                        return SaveSimplifiedMeshAsset(
-                            optimizedMesh,
-                            selectionName,
-                            sourceMesh.name,
-                            options.OutputFolder,
-                            report,
-                            relaxedResult,
-                            "using relaxed quadric preservation.");
-                    }
-                }
-
-                if (VertexClusterMeshSimplifier.TrySimplify(sourceMesh, options, out optimizedMesh, out MeshSimplificationResult fallbackResult))
-                {
-                    return SaveSimplifiedMeshAsset(
-                        optimizedMesh,
-                        selectionName,
-                        sourceMesh.name,
-                        options.OutputFolder,
-                        report,
-                        fallbackResult,
-                        "using vertex-cluster fallback.");
-                }
-
                 report.UniqueMeshesSkipped++;
                 return new CachedMeshResult(sourceMesh, false, string.Empty, result);
             }
@@ -680,6 +652,25 @@ namespace Brainy.EditorTools
                 false,
                 false,
                 false,
+                RecalculateNormals,
+                RecalculateTangents,
+                OptimizeMeshBuffers,
+                AutoMakeSourceMeshesReadable,
+                OutputFolder);
+        }
+
+        public SceneMeshOptimizerOptions WithTargetTriangleRatio(float targetTriangleRatio)
+        {
+            return new SceneMeshOptimizerOptions(
+                targetTriangleRatio,
+                ReplaceSelection,
+                KeepDisabledBackup,
+                IncludeInactiveChildren,
+                UpdateMeshColliders,
+                PreserveUvSeams,
+                PreserveLightmapUvSeams,
+                PreserveHardEdges,
+                PreserveSkinningBoundaries,
                 RecalculateNormals,
                 RecalculateTangents,
                 OptimizeMeshBuffers,
@@ -1003,6 +994,393 @@ namespace Brainy.EditorTools
             OriginalTriangleCount = originalTriangleCount;
             OptimizedTriangleCount = optimizedTriangleCount;
             Message = message;
+        }
+    }
+
+    internal static class QualityFirstMeshSimplifier
+    {
+        private const float TargetSlack = 1.05f;
+
+        public static bool TrySimplify(
+            Mesh sourceMesh,
+            SceneMeshOptimizerOptions options,
+            out Mesh optimizedMesh,
+            out MeshSimplificationResult result)
+        {
+            optimizedMesh = null;
+
+            if (TrySimplifyWithReferenceBackend(sourceMesh, options, out optimizedMesh, out result))
+            {
+                return true;
+            }
+
+            string backendFailureMessage = result.Message;
+            if (TrySimplifyWithStagedQuadric(sourceMesh, options, out optimizedMesh, out MeshSimplificationResult stagedResult))
+            {
+                result = stagedResult;
+                return true;
+            }
+
+            result = new MeshSimplificationResult(
+                false,
+                stagedResult.OriginalVertexCount,
+                stagedResult.OptimizedVertexCount,
+                stagedResult.OriginalTriangleCount,
+                stagedResult.OptimizedTriangleCount,
+                backendFailureMessage + " Fallback result: " + stagedResult.Message);
+            return false;
+        }
+
+        private static bool TrySimplifyWithReferenceBackend(
+            Mesh sourceMesh,
+            SceneMeshOptimizerOptions options,
+            out Mesh optimizedMesh,
+            out MeshSimplificationResult result)
+        {
+            optimizedMesh = null;
+
+            if (sourceMesh == null)
+            {
+                result = new MeshSimplificationResult(false, 0, 0, 0, 0, "Skipping Unknown Mesh: mesh reference is missing.");
+                return false;
+            }
+
+            int originalTriangleCount = MeshStats.CountTriangles(sourceMesh);
+            int originalVertexCount = sourceMesh.vertexCount;
+            int targetTriangleCount = Mathf.Max(1, Mathf.RoundToInt(originalTriangleCount * options.TargetTriangleRatio));
+            if (targetTriangleCount >= originalTriangleCount)
+            {
+                result = new MeshSimplificationResult(
+                    false,
+                    originalVertexCount,
+                    originalVertexCount,
+                    originalTriangleCount,
+                    originalTriangleCount,
+                    "Skipping " + sourceMesh.name + ": target ratio is too close to the original mesh.");
+                return false;
+            }
+
+            if (!sourceMesh.isReadable)
+            {
+                result = new MeshSimplificationResult(
+                    false,
+                    originalVertexCount,
+                    0,
+                    originalTriangleCount,
+                    0,
+                    "Skipping " + sourceMesh.name + ": mesh is not readable.");
+                return false;
+            }
+
+            BoneWeight[] sourceBoneWeights = sourceMesh.boneWeights;
+            if (sourceBoneWeights != null && sourceBoneWeights.Length == sourceMesh.vertexCount)
+            {
+                result = new MeshSimplificationResult(
+                    false,
+                    originalVertexCount,
+                    originalVertexCount,
+                    originalTriangleCount,
+                    originalTriangleCount,
+                    "Skipping " + sourceMesh.name + ": smart-linked backend is disabled for skinned meshes to avoid bone-weight interpolation artifacts.");
+                return false;
+            }
+
+            MeshSimplifier simplifier = new MeshSimplifier(sourceMesh);
+            simplifier.SimplificationOptions = BuildReferenceOptions(sourceMesh, options);
+            simplifier.SimplifyMesh(options.TargetTriangleRatio);
+
+            optimizedMesh = simplifier.ToMesh();
+            optimizedMesh.name = sourceMesh.name + "_Optimized";
+            FinalizeMeshPostProcessing(optimizedMesh, sourceMesh, options);
+
+            int optimizedTriangleCount = MeshStats.CountTriangles(optimizedMesh);
+            int optimizedVertexCount = optimizedMesh.vertexCount;
+            bool hasReduction =
+                optimizedTriangleCount < originalTriangleCount ||
+                optimizedVertexCount < originalVertexCount;
+
+            if (!hasReduction)
+            {
+                UnityEngine.Object.DestroyImmediate(optimizedMesh);
+                optimizedMesh = null;
+                result = new MeshSimplificationResult(
+                    false,
+                    originalVertexCount,
+                    originalVertexCount,
+                    originalTriangleCount,
+                    originalTriangleCount,
+                    "Skipping " + sourceMesh.name + ": UnityMeshSimplifier did not find a meaningful reduction.");
+                return false;
+            }
+
+            string message =
+                sourceMesh.name + ": " +
+                originalTriangleCount.ToString("N0") + " -> " + optimizedTriangleCount.ToString("N0") + " tris, " +
+                originalVertexCount.ToString("N0") + " -> " + optimizedVertexCount.ToString("N0") + " verts via smart-linked quadric simplification.";
+
+            if (optimizedTriangleCount > Mathf.CeilToInt(targetTriangleCount * TargetSlack))
+            {
+                message +=
+                    " Stopped above the requested " +
+                    targetTriangleCount.ToString("N0") +
+                    " tris to preserve mesh quality.";
+            }
+
+            result = new MeshSimplificationResult(
+                true,
+                originalVertexCount,
+                optimizedVertexCount,
+                originalTriangleCount,
+                optimizedTriangleCount,
+                message);
+            return true;
+        }
+
+        private static bool TrySimplifyWithStagedQuadric(
+            Mesh sourceMesh,
+            SceneMeshOptimizerOptions options,
+            out Mesh optimizedMesh,
+            out MeshSimplificationResult result)
+        {
+            optimizedMesh = null;
+
+            if (sourceMesh == null)
+            {
+                result = new MeshSimplificationResult(false, 0, 0, 0, 0, "Skipping Unknown Mesh: mesh reference is missing.");
+                return false;
+            }
+
+            int originalTriangleCount = MeshStats.CountTriangles(sourceMesh);
+            int originalVertexCount = sourceMesh.vertexCount;
+            int finalTargetTriangleCount = Mathf.Max(1, Mathf.RoundToInt(originalTriangleCount * options.TargetTriangleRatio));
+            int protectedTargetTriangleCount = Mathf.Max(
+                finalTargetTriangleCount,
+                Mathf.RoundToInt(originalTriangleCount * Mathf.Sqrt(options.TargetTriangleRatio)));
+
+            Mesh currentMesh = sourceMesh;
+            bool ownsCurrentMesh = false;
+            bool anyStageSucceeded = false;
+            string failureMessage = string.Empty;
+
+            try
+            {
+                if (TryRunStage(
+                    currentMesh,
+                    options.WithTargetTriangleRatio(GetStageRatio(currentMesh, protectedTargetTriangleCount)),
+                    out Mesh stageMesh,
+                    out MeshSimplificationResult stageResult))
+                {
+                    currentMesh = ReplaceIntermediateMesh(currentMesh, stageMesh, ref ownsCurrentMesh);
+                    anyStageSucceeded = true;
+                }
+                else
+                {
+                    failureMessage = stageResult.Message;
+                }
+
+                if (ShouldContinueReducing(currentMesh, finalTargetTriangleCount))
+                {
+                    if (TryRunStage(
+                        currentMesh,
+                        options.WithTargetTriangleRatio(GetStageRatio(currentMesh, finalTargetTriangleCount)),
+                        out stageMesh,
+                        out stageResult))
+                    {
+                        currentMesh = ReplaceIntermediateMesh(currentMesh, stageMesh, ref ownsCurrentMesh);
+                        anyStageSucceeded = true;
+                    }
+                    else if (!anyStageSucceeded)
+                    {
+                        failureMessage = stageResult.Message;
+                    }
+                }
+
+                if (options.UsesAnyPreservation && ShouldContinueReducing(currentMesh, finalTargetTriangleCount))
+                {
+                    SceneMeshOptimizerOptions relaxedOptions = options.WithRelaxedPreservation();
+                    if (TryRunStage(
+                        currentMesh,
+                        relaxedOptions.WithTargetTriangleRatio(GetStageRatio(currentMesh, finalTargetTriangleCount)),
+                        out stageMesh,
+                        out stageResult))
+                    {
+                        currentMesh = ReplaceIntermediateMesh(currentMesh, stageMesh, ref ownsCurrentMesh);
+                        anyStageSucceeded = true;
+                    }
+                    else if (!anyStageSucceeded)
+                    {
+                        failureMessage = stageResult.Message;
+                    }
+                }
+
+                if (!anyStageSucceeded || !ownsCurrentMesh || currentMesh == null)
+                {
+                    result = new MeshSimplificationResult(
+                        false,
+                        originalVertexCount,
+                        originalVertexCount,
+                        originalTriangleCount,
+                        originalTriangleCount,
+                        string.IsNullOrEmpty(failureMessage)
+                            ? "Skipping " + sourceMesh.name + ": the staged quadric pass did not find a meaningful reduction."
+                            : failureMessage);
+                    optimizedMesh = null;
+                    return false;
+                }
+
+                int optimizedTriangleCount = MeshStats.CountTriangles(currentMesh);
+                int optimizedVertexCount = currentMesh.vertexCount;
+                bool reachedRequestedTarget = optimizedTriangleCount <= Mathf.CeilToInt(finalTargetTriangleCount * TargetSlack);
+
+                string message =
+                    sourceMesh.name + ": " +
+                    originalTriangleCount.ToString("N0") + " -> " + optimizedTriangleCount.ToString("N0") + " tris, " +
+                    originalVertexCount.ToString("N0") + " -> " + optimizedVertexCount.ToString("N0") + " verts via staged quadric edge collapse.";
+
+                if (!reachedRequestedTarget)
+                {
+                    message +=
+                        " Stopped above the requested " +
+                        finalTargetTriangleCount.ToString("N0") +
+                        " tris to avoid the artifact-prone fallback path.";
+                }
+
+                optimizedMesh = currentMesh;
+                result = new MeshSimplificationResult(
+                    true,
+                    originalVertexCount,
+                    optimizedVertexCount,
+                    originalTriangleCount,
+                    optimizedTriangleCount,
+                    message);
+                return true;
+            }
+            catch
+            {
+                if (ownsCurrentMesh && currentMesh != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(currentMesh);
+                }
+
+                throw;
+            }
+        }
+
+        private static SimplificationOptions BuildReferenceOptions(Mesh sourceMesh, SceneMeshOptimizerOptions options)
+        {
+            Bounds bounds = sourceMesh.bounds;
+            float maximumAxisLength = Mathf.Max(bounds.size.x, Mathf.Max(bounds.size.y, bounds.size.z));
+            if (maximumAxisLength <= 0f)
+            {
+                maximumAxisLength = 1f;
+            }
+
+            double smartLinkDistance = Math.Max(maximumAxisLength * 0.000001d, 0.000000001d);
+
+            return new SimplificationOptions
+            {
+                PreserveBorderEdges = true,
+                PreserveUVSeamEdges = options.PreserveUvSeams || options.PreserveLightmapUvSeams,
+                PreserveUVFoldoverEdges = options.PreserveUvSeams,
+                PreserveSurfaceCurvature = options.PreserveHardEdges,
+                EnableSmartLink = true,
+                VertexLinkDistance = smartLinkDistance,
+                MaxIterationCount = 100,
+                Agressiveness = 7.0d,
+                ManualUVComponentCount = false,
+                UVComponentCount = 2
+            };
+        }
+
+        private static void FinalizeMeshPostProcessing(Mesh optimizedMesh, Mesh sourceMesh, SceneMeshOptimizerOptions options)
+        {
+            if (optimizedMesh == null)
+            {
+                return;
+            }
+
+            if (options.RecalculateNormals || sourceMesh.normals == null || sourceMesh.normals.Length != sourceMesh.vertexCount)
+            {
+                optimizedMesh.RecalculateNormals();
+            }
+
+            if ((options.RecalculateTangents || sourceMesh.tangents == null || sourceMesh.tangents.Length != sourceMesh.vertexCount) &&
+                MeshHasUv0(optimizedMesh))
+            {
+                optimizedMesh.RecalculateTangents();
+            }
+
+            optimizedMesh.RecalculateBounds();
+
+            if (options.OptimizeMeshBuffers)
+            {
+                MeshUtility.Optimize(optimizedMesh);
+            }
+        }
+
+        private static bool MeshHasUv0(Mesh mesh)
+        {
+            if (mesh == null)
+            {
+                return false;
+            }
+
+            List<Vector4> uvBuffer = new List<Vector4>();
+            mesh.GetUVs(0, uvBuffer);
+            return uvBuffer.Count == mesh.vertexCount;
+        }
+
+        private static bool TryRunStage(
+            Mesh currentMesh,
+            SceneMeshOptimizerOptions options,
+            out Mesh stageMesh,
+            out MeshSimplificationResult result)
+        {
+            stageMesh = null;
+
+            int currentTriangleCount = MeshStats.CountTriangles(currentMesh);
+            int targetTriangleCount = Mathf.Max(1, Mathf.RoundToInt(currentTriangleCount * options.TargetTriangleRatio));
+            if (targetTriangleCount >= currentTriangleCount)
+            {
+                result = new MeshSimplificationResult(
+                    false,
+                    currentMesh.vertexCount,
+                    currentMesh.vertexCount,
+                    currentTriangleCount,
+                    currentTriangleCount,
+                    "Skipping " + currentMesh.name + ": staged target is already at the current mesh density.");
+                return false;
+            }
+
+            return QuadricErrorMeshSimplifier.TrySimplify(currentMesh, options, out stageMesh, out result);
+        }
+
+        private static Mesh ReplaceIntermediateMesh(Mesh currentMesh, Mesh nextMesh, ref bool ownsCurrentMesh)
+        {
+            if (ownsCurrentMesh && currentMesh != null)
+            {
+                UnityEngine.Object.DestroyImmediate(currentMesh);
+            }
+
+            ownsCurrentMesh = true;
+            return nextMesh;
+        }
+
+        private static bool ShouldContinueReducing(Mesh mesh, int finalTargetTriangleCount)
+        {
+            if (mesh == null)
+            {
+                return false;
+            }
+
+            return MeshStats.CountTriangles(mesh) > Mathf.CeilToInt(finalTargetTriangleCount * TargetSlack);
+        }
+
+        private static float GetStageRatio(Mesh mesh, int absoluteTargetTriangleCount)
+        {
+            int currentTriangleCount = Mathf.Max(1, MeshStats.CountTriangles(mesh));
+            float ratio = absoluteTargetTriangleCount / (float)currentTriangleCount;
+            return Mathf.Clamp(ratio, 0.05f, 0.999f);
         }
     }
 
@@ -2147,9 +2525,11 @@ namespace Brainy.EditorTools
             SnapCoincidentOutputVertices(sourceData, remap, positions);
 
             List<int>[] subMeshIndices = new List<int>[sourceData.SubMeshIndices.Length];
+            HashSet<TriangleIndexKey>[] uniqueTriangles = new HashSet<TriangleIndexKey>[sourceData.SubMeshIndices.Length];
             for (int subMeshIndex = 0; subMeshIndex < subMeshIndices.Length; subMeshIndex++)
             {
                 subMeshIndices[subMeshIndex] = new List<int>();
+                uniqueTriangles[subMeshIndex] = new HashSet<TriangleIndexKey>();
             }
 
             for (int triangleIndex = 0; triangleIndex < triangles.Count; triangleIndex++)
@@ -2174,6 +2554,12 @@ namespace Brainy.EditorTools
                     continue;
                 }
 
+                TriangleIndexKey triangleKey = new TriangleIndexKey(a, b, c);
+                if (!uniqueTriangles[triangle.SubMesh].Add(triangleKey))
+                {
+                    continue;
+                }
+
                 subMeshIndices[triangle.SubMesh].Add(a);
                 subMeshIndices[triangle.SubMesh].Add(b);
                 subMeshIndices[triangle.SubMesh].Add(c);
@@ -2184,6 +2570,16 @@ namespace Brainy.EditorTools
             {
                 return false;
             }
+
+            CompactVertexData(
+                ref optimizedVertexCount,
+                ref positions,
+                ref normals,
+                ref tangents,
+                ref colors,
+                ref uvChannels,
+                ref boneWeights,
+                subMeshIndices);
 
             optimizedMesh = new Mesh
             {
@@ -2300,6 +2696,136 @@ namespace Brainy.EditorTools
             }
         }
 
+        private static void CompactVertexData(
+            ref int vertexCount,
+            ref Vector3[] positions,
+            ref Vector3[] normals,
+            ref Vector4[] tangents,
+            ref Color[] colors,
+            ref Vector4[][] uvChannels,
+            ref BoneWeight[] boneWeights,
+            List<int>[] subMeshIndices)
+        {
+            bool[] usedVertices = new bool[vertexCount];
+
+            for (int subMeshIndex = 0; subMeshIndex < subMeshIndices.Length; subMeshIndex++)
+            {
+                List<int> indices = subMeshIndices[subMeshIndex];
+                for (int index = 0; index < indices.Count; index++)
+                {
+                    int vertexIndex = indices[index];
+                    if (vertexIndex >= 0 && vertexIndex < usedVertices.Length)
+                    {
+                        usedVertices[vertexIndex] = true;
+                    }
+                }
+            }
+
+            int[] compactRemap = new int[vertexCount];
+            Array.Fill(compactRemap, -1);
+
+            int compactVertexCount = 0;
+            for (int vertexIndex = 0; vertexIndex < vertexCount; vertexIndex++)
+            {
+                if (!usedVertices[vertexIndex])
+                {
+                    continue;
+                }
+
+                compactRemap[vertexIndex] = compactVertexCount;
+                compactVertexCount++;
+            }
+
+            if (compactVertexCount == vertexCount)
+            {
+                return;
+            }
+
+            Vector3[] compactPositions = new Vector3[compactVertexCount];
+            Vector3[] compactNormals = normals != null ? new Vector3[compactVertexCount] : null;
+            Vector4[] compactTangents = tangents != null ? new Vector4[compactVertexCount] : null;
+            Color[] compactColors = colors != null ? new Color[compactVertexCount] : null;
+            BoneWeight[] compactBoneWeights = boneWeights != null ? new BoneWeight[compactVertexCount] : null;
+            Vector4[][] compactUvChannels = null;
+
+            if (uvChannels != null)
+            {
+                compactUvChannels = new Vector4[uvChannels.Length][];
+                for (int channelIndex = 0; channelIndex < uvChannels.Length; channelIndex++)
+                {
+                    if (uvChannels[channelIndex] == null)
+                    {
+                        continue;
+                    }
+
+                    compactUvChannels[channelIndex] = new Vector4[compactVertexCount];
+                }
+            }
+
+            for (int vertexIndex = 0; vertexIndex < vertexCount; vertexIndex++)
+            {
+                int compactIndex = compactRemap[vertexIndex];
+                if (compactIndex < 0)
+                {
+                    continue;
+                }
+
+                compactPositions[compactIndex] = positions[vertexIndex];
+
+                if (compactNormals != null)
+                {
+                    compactNormals[compactIndex] = normals[vertexIndex];
+                }
+
+                if (compactTangents != null)
+                {
+                    compactTangents[compactIndex] = tangents[vertexIndex];
+                }
+
+                if (compactColors != null)
+                {
+                    compactColors[compactIndex] = colors[vertexIndex];
+                }
+
+                if (compactBoneWeights != null)
+                {
+                    compactBoneWeights[compactIndex] = boneWeights[vertexIndex];
+                }
+
+                if (compactUvChannels == null)
+                {
+                    continue;
+                }
+
+                for (int channelIndex = 0; channelIndex < compactUvChannels.Length; channelIndex++)
+                {
+                    if (compactUvChannels[channelIndex] == null)
+                    {
+                        continue;
+                    }
+
+                    compactUvChannels[channelIndex][compactIndex] = uvChannels[channelIndex][vertexIndex];
+                }
+            }
+
+            for (int subMeshIndex = 0; subMeshIndex < subMeshIndices.Length; subMeshIndex++)
+            {
+                List<int> indices = subMeshIndices[subMeshIndex];
+                for (int index = 0; index < indices.Count; index++)
+                {
+                    indices[index] = compactRemap[indices[index]];
+                }
+            }
+
+            vertexCount = compactVertexCount;
+            positions = compactPositions;
+            normals = compactNormals;
+            tangents = compactTangents;
+            colors = compactColors;
+            uvChannels = compactUvChannels ?? Array.Empty<Vector4[]>();
+            boneWeights = compactBoneWeights;
+        }
+
         private static string SafeMeshName(Mesh mesh)
         {
             return mesh != null ? mesh.name : "Unknown Mesh";
@@ -2332,6 +2858,42 @@ namespace Brainy.EditorTools
             unchecked
             {
                 return (VertexA * 397) ^ VertexB;
+            }
+        }
+    }
+
+    internal readonly struct TriangleIndexKey : IEquatable<TriangleIndexKey>
+    {
+        private readonly int a;
+        private readonly int b;
+        private readonly int c;
+
+        public TriangleIndexKey(int first, int second, int third)
+        {
+            a = Mathf.Min(first, Mathf.Min(second, third));
+            c = Mathf.Max(first, Mathf.Max(second, third));
+            b = first + second + third - a - c;
+        }
+
+        public bool Equals(TriangleIndexKey other)
+        {
+            return a == other.a && b == other.b && c == other.c;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is TriangleIndexKey other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = 17;
+                hash = (hash * 31) + a;
+                hash = (hash * 31) + b;
+                hash = (hash * 31) + c;
+                return hash;
             }
         }
     }
