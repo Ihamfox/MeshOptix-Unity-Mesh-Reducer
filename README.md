@@ -1,4 +1,7 @@
 # MeshOptix: Scene Mesh Optimizer for Unity
+![Static Badge](https://img.shields.io/badge/Release_-v1.0.0_-blue)
+![Static Badge](https://img.shields.io/badge/License_-MIT_-green)
+![Static Badge](https://img.shields.io/badge/Creator-Hamed_Khalifa-blue?logo=unity)
 
 MeshOptix is a Unity editor tool focused on practical scene-level mesh reduction with a clean workflow and quality-first defaults.
 
