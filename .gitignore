@@ -116,3 +116,4 @@ casesensitivetest
 # Notes
 # =========================
 # Keep Packages/packages-lock.json for reproducible builds
+/ProjectSettings
