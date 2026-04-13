@@ -12,7 +12,6 @@ It helps you reduce triangle and vertex counts on selected scene hierarchies whi
 - Replace mode and in-place mode workflows
 - Collider remapping for matching MeshCollider sources
 - Detailed run report and optimization result popup
-- A simplified preservation UI with advanced options available when needed
 
 ## Key Features
 
@@ -22,11 +21,6 @@ It helps you reduce triangle and vertex counts on selected scene hierarchies whi
 - Optional automatic Read/Write enable for importable model meshes
 - Works on active and optionally inactive children
 - Undo support for scene object changes
-
-## Requirements
-
-- Unity 6 (tested in this repo with 6000.3.9f1)
-- Windows/macOS/Linux Unity Editor environment
 
 ## Installation
 
@@ -48,17 +42,6 @@ It helps you reduce triangle and vertex counts on selected scene hierarchies whi
 6. Set output folder (must be under Assets).
 7. Click Optimize Selected.
 8. Review the optimization popup and the Last Run panel.
-
-## How the Workflow Operates
-
-1. The tool validates your scene selection.
-2. It collects supported renderers in the selected hierarchy.
-3. It prepares readable source meshes when possible (if enabled).
-4. It simplifies each unique mesh and saves optimized mesh assets.
-5. It assigns optimized meshes back to targets.
-6. It optionally updates matching MeshCollider components.
-7. It finalizes replacement mode behavior if enabled.
-8. It reports totals and per-mesh messages.
 
 ## Settings Reference
 
@@ -84,16 +67,6 @@ It helps you reduce triangle and vertex counts on selected scene hierarchies whi
 - Recalculate Tangents
 	- Recommended if normal maps are used.
 
-### Preservation (Advanced Foldout)
-
-- Preserve UV0 Seams
-- Preserve UV1 Seams
-- Recalculate Normals
-- Optimize Mesh Buffers
-- Auto Enable Read/Write
-
-These are intentionally grouped under advanced controls to keep everyday usage simple while preserving power-user flexibility.
-
 ### Replacement
 
 - Replace Selected Object
@@ -103,44 +76,10 @@ These are intentionally grouped under advanced controls to keep everyday usage s
 
 Use in-place behavior (Replace Selected Object off) when you need maximum scene reference safety.
 
-### Output
-
-- Output folder must be inside Assets.
-- Default folder:
-	- Assets/Project/Prefabs/Optimized_Meshes
-
-## Results and Reporting
-
-After each run you get:
-
-- A results popup with:
-	- Renderers touched
-	- Unique meshes simplified/skipped
-	- Triangles before/after
-	- Vertices before/after
-	- Output folder
-	- Detailed per-mesh messages
-- A Last Run section in the main window with summary and message log
-
 ## Supported Targets
 
 - MeshFilter + MeshRenderer pairs
 - SkinnedMeshRenderer
-- Optional matching MeshCollider updates
-
-## Important Behavior Notes
-
-- You must select a scene instance, not a prefab asset from the Project window.
-- Undo restores scene object changes.
-- Generated mesh assets remain in the project (they are asset files).
-- If no mesh is meaningfully reduced, the run is aborted and reverted.
-
-## Known Limitations
-
-- Blend shapes are not supported by the custom simplifier path.
-- Non-readable meshes may be skipped unless readable import can be enabled.
-- Automatic Read/Write toggling works only for importable model assets.
-- Exact target ratio is not always guaranteed if quality constraints require stopping early.
 
 ## Troubleshooting
 
@@ -171,7 +110,6 @@ After each run you get:
 ## Credits
 
 - Creator: Hamed Khalifa
-- Company: Hamfox inc
 - LinkedIn: https://www.linkedin.com/in/hamed-khalifa/
 - GitHub: https://github.com/Ihamfox
 
