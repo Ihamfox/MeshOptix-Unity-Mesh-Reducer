@@ -59,6 +59,7 @@ namespace Brainy.EditorTools
         [SerializeField] private string creditCopyright = "Copyright (c) 2025 Hamed Khalifa";
         [SerializeField] private string creditLinkedInUrl = "https://www.linkedin.com/in/ihamfox";
         [SerializeField] private string creditGitHubUrl = "https://github.com/Ihamfox";
+        [SerializeField] private bool showAdvancedPreservationOptions;
 
         private Vector2 windowScrollPosition;
         private Vector2 creditsScrollPosition;
@@ -369,14 +370,18 @@ namespace Brainy.EditorTools
 
             EditorGUILayout.Space(6f);
             EditorGUILayout.LabelField("Preservation", subsectionTitleStyle);
+            EditorGUILayout.LabelField("Essentials first. Expand advanced controls only when needed.", sectionSubtitleStyle);
 
-            preserveUvSeams = EditorGUILayout.Toggle(
-                new GUIContent("Preserve UV0 Seams", "Keeps texture seams safer at the cost of less reduction."),
-                preserveUvSeams);
+            bool preserveAnyUvSeams = preserveUvSeams || preserveLightmapUvSeams;
+            bool preserveAnyUvSeamsNext = EditorGUILayout.Toggle(
+                new GUIContent("Preserve UV Seams (Recommended)", "Enables both UV0 and UV1 seam preservation to protect texture and lightmap seams."),
+                preserveAnyUvSeams);
 
-            preserveLightmapUvSeams = EditorGUILayout.Toggle(
-                new GUIContent("Preserve UV1 Seams", "Useful when the mesh depends on secondary UVs/lightmap UVs."),
-                preserveLightmapUvSeams);
+            if (preserveAnyUvSeamsNext != preserveAnyUvSeams)
+            {
+                preserveUvSeams = preserveAnyUvSeamsNext;
+                preserveLightmapUvSeams = preserveAnyUvSeamsNext;
+            }
 
             preserveHardEdges = EditorGUILayout.Toggle(
                 new GUIContent("Preserve Hard Edges", "Keeps vertices with clearly different normals separated."),
@@ -386,21 +391,43 @@ namespace Brainy.EditorTools
                 new GUIContent("Preserve Skinning Boundaries", "Helps skinned meshes keep bone regions separated."),
                 preserveSkinningBoundaries);
 
-            recalculateNormals = EditorGUILayout.Toggle(
-                new GUIContent("Recalculate Normals", "Useful if the simplified result looks faceted or noisy."),
-                recalculateNormals);
-
             recalculateTangents = EditorGUILayout.Toggle(
                 new GUIContent("Recalculate Tangents", "Recommended if the mesh uses normal maps."),
                 recalculateTangents);
 
-            optimizeMeshBuffers = EditorGUILayout.Toggle(
-                new GUIContent("Optimize Mesh Buffers", "Runs Unity's mesh buffer optimizer after simplification."),
-                optimizeMeshBuffers);
+            EditorGUILayout.Space(4f);
+            showAdvancedPreservationOptions = EditorGUILayout.Foldout(
+                showAdvancedPreservationOptions,
+                "Advanced Preservation & Processing",
+                true);
 
-            autoMakeSourceMeshesReadable = EditorGUILayout.Toggle(
-                new GUIContent("Auto Enable Read/Write", "Temporarily toggles model importers to readable when needed, then restores them."),
-                autoMakeSourceMeshesReadable);
+            if (showAdvancedPreservationOptions)
+            {
+                using (new EditorGUI.IndentLevelScope())
+                {
+                    EditorGUILayout.HelpBox("Use these options for specific artifact fixes or import constraints.", MessageType.None);
+
+                    preserveUvSeams = EditorGUILayout.Toggle(
+                        new GUIContent("Preserve UV0 Seams", "Keeps primary texture seams safer at the cost of less reduction."),
+                        preserveUvSeams);
+
+                    preserveLightmapUvSeams = EditorGUILayout.Toggle(
+                        new GUIContent("Preserve UV1 Seams", "Useful when the mesh depends on secondary UVs/lightmap UVs."),
+                        preserveLightmapUvSeams);
+
+                    recalculateNormals = EditorGUILayout.Toggle(
+                        new GUIContent("Recalculate Normals", "Useful if the simplified result looks faceted or noisy."),
+                        recalculateNormals);
+
+                    optimizeMeshBuffers = EditorGUILayout.Toggle(
+                        new GUIContent("Optimize Mesh Buffers", "Runs Unity's mesh buffer optimizer after simplification."),
+                        optimizeMeshBuffers);
+
+                    autoMakeSourceMeshesReadable = EditorGUILayout.Toggle(
+                        new GUIContent("Auto Enable Read/Write", "Temporarily toggles model importers to readable when needed, then restores them."),
+                        autoMakeSourceMeshesReadable);
+                }
+            }
 
             EditorGUILayout.Space(6f);
             EditorGUILayout.LabelField("Replacement", subsectionTitleStyle);
