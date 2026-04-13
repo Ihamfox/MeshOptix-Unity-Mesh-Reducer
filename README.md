@@ -100,13 +100,6 @@ Use in-place behavior (Replace Selected Object off) when you need maximum scene 
 - Scene references break after optimization:
 	- Prefer in-place mode by disabling Replace Selected Object.
 
-## Repository Structure
-
-- Assets/Scripts/Editor/SceneMeshOptimizerWindow.cs
-	- Editor UI, optimization orchestration, reporting, and utility classes
-- Assets/Scripts/MeshOptix/MeshSimplifierCore
-	- Core simplification implementation and supporting math/data types
-
 ## Credits
 
 - Creator: Hamed Khalifa
