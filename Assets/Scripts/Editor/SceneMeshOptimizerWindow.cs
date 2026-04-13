@@ -36,6 +36,8 @@ namespace Brainy.EditorTools
     public sealed class SceneMeshOptimizerWindow : EditorWindow
     {
         private const string DefaultOutputFolder = "Assets/Project/Prefabs/Optimized_Meshes";
+        private const string ToolTitle = "MeshOptix : Scene Mesh Optimizer";
+        private static readonly string[] WindowTabs = { "Optimizer", "Credits" };
 
         [SerializeField] private float targetTriangleRatio = 0.5f;
         [SerializeField] private bool replaceSelection = true;
@@ -51,36 +53,276 @@ namespace Brainy.EditorTools
         [SerializeField] private bool optimizeMeshBuffers = true;
         [SerializeField] private bool autoMakeSourceMeshesReadable = true;
         [SerializeField] private string outputFolder = DefaultOutputFolder;
+        [SerializeField] private int selectedTabIndex;
+        [SerializeField] private string creditCreatorName = "Hamed Khalifa";
+        [SerializeField] private string creditCompanyName = "Hamfox inc";
+        [SerializeField] private string creditCopyright = "Copyright (c) 2025 Hamed Khalifa";
+        [SerializeField] private string creditLinkedInUrl = "https://www.linkedin.com/in/ihamfox";
+        [SerializeField] private string creditGitHubUrl = "https://github.com/Ihamfox";
 
+        private Vector2 windowScrollPosition;
+        private Vector2 creditsScrollPosition;
         private Vector2 reportScrollPosition;
         private OptimizationReport lastReport;
 
-        [MenuItem("Tools/Optimization/Scene Mesh Optimizer")]
+        private bool stylesInitialized;
+        private bool stylesForProSkin;
+        private GUIStyle headerContainerStyle;
+        private GUIStyle sectionContainerStyle;
+        private GUIStyle windowTitleStyle;
+        private GUIStyle windowSubtitleStyle;
+        private GUIStyle sectionTitleStyle;
+        private GUIStyle sectionSubtitleStyle;
+        private GUIStyle subsectionTitleStyle;
+        private GUIStyle primaryButtonStyle;
+        private GUIStyle reportEntryStyle;
+        private GUIStyle summaryMetricLabelStyle;
+        private GUIStyle summaryMetricValueStyle;
+
+        [MenuItem("Tools/Optimization/MeshOptix : Scene Mesh Optimizer")]
         public static void ShowWindow()
         {
-            SceneMeshOptimizerWindow window = GetWindow<SceneMeshOptimizerWindow>("Scene Mesh Optimizer");
+            SceneMeshOptimizerWindow window = GetWindow<SceneMeshOptimizerWindow>(ToolTitle);
             window.minSize = new Vector2(480f, 620f);
         }
 
-        [MenuItem("GameObject/Optimization/Open Scene Mesh Optimizer", false, 49)]
+        [MenuItem("GameObject/Optimization/Open MeshOptix : Scene Mesh Optimizer", false, 49)]
         private static void ShowWindowFromGameObjectMenu()
         {
             ShowWindow();
         }
 
-        [MenuItem("GameObject/Optimization/Open Scene Mesh Optimizer", true)]
+        [MenuItem("GameObject/Optimization/Open MeshOptix : Scene Mesh Optimizer", true)]
         private static bool ValidateShowWindowFromGameObjectMenu()
         {
             GameObject selectedObject = Selection.activeGameObject;
             return selectedObject != null && !EditorUtility.IsPersistent(selectedObject);
         }
 
+        private void EnsureStyles()
+        {
+            bool isProSkin = EditorGUIUtility.isProSkin;
+            if (stylesInitialized && stylesForProSkin == isProSkin)
+            {
+                return;
+            }
+
+            headerContainerStyle = new GUIStyle(EditorStyles.helpBox)
+            {
+                padding = new RectOffset(14, 14, 12, 12),
+                margin = new RectOffset(8, 8, 8, 6)
+            };
+
+            sectionContainerStyle = new GUIStyle(EditorStyles.helpBox)
+            {
+                padding = new RectOffset(12, 12, 10, 12),
+                margin = new RectOffset(8, 8, 0, 0)
+            };
+
+            windowTitleStyle = new GUIStyle(EditorStyles.boldLabel)
+            {
+                fontSize = 17,
+                fontStyle = FontStyle.Bold,
+                wordWrap = true
+            };
+
+            windowSubtitleStyle = new GUIStyle(EditorStyles.label)
+            {
+                fontSize = 11,
+                wordWrap = true
+            };
+            windowSubtitleStyle.normal.textColor = isProSkin ? new Color(0.82f, 0.82f, 0.82f) : new Color(0.25f, 0.25f, 0.25f);
+
+            sectionTitleStyle = new GUIStyle(EditorStyles.boldLabel)
+            {
+                fontSize = 12
+            };
+
+            sectionSubtitleStyle = new GUIStyle(EditorStyles.miniLabel)
+            {
+                wordWrap = true
+            };
+            sectionSubtitleStyle.normal.textColor = isProSkin ? new Color(0.74f, 0.74f, 0.74f) : new Color(0.32f, 0.32f, 0.32f);
+
+            subsectionTitleStyle = new GUIStyle(EditorStyles.miniBoldLabel)
+            {
+                fontSize = 11
+            };
+
+            primaryButtonStyle = new GUIStyle(GUI.skin.button)
+            {
+                fontSize = 12,
+                fontStyle = FontStyle.Bold,
+                fixedHeight = 34f
+            };
+
+            reportEntryStyle = new GUIStyle(EditorStyles.wordWrappedMiniLabel)
+            {
+                richText = false
+            };
+
+            summaryMetricLabelStyle = new GUIStyle(EditorStyles.label)
+            {
+                fontSize = 12,
+                alignment = TextAnchor.MiddleLeft,
+                richText = false
+            };
+            summaryMetricLabelStyle.normal.textColor = isProSkin ? new Color(0.88f, 0.88f, 0.88f) : new Color(0.18f, 0.18f, 0.18f);
+
+            summaryMetricValueStyle = new GUIStyle(EditorStyles.boldLabel)
+            {
+                fontSize = 14,
+                alignment = TextAnchor.MiddleRight,
+                richText = false
+            };
+            summaryMetricValueStyle.normal.textColor = isProSkin ? new Color(0.94f, 0.94f, 0.94f) : new Color(0.1f, 0.1f, 0.1f);
+
+            stylesForProSkin = isProSkin;
+            stylesInitialized = true;
+        }
+
+        private static Color GetAccentColor()
+        {
+            return EditorGUIUtility.isProSkin
+                ? new Color(0.25f, 0.58f, 0.95f, 1f)
+                : new Color(0.16f, 0.47f, 0.86f, 1f);
+        }
+
+        private void DrawWindowHeader()
+        {
+            EditorGUILayout.BeginVertical(headerContainerStyle);
+
+            Rect accentRect = EditorGUILayout.GetControlRect(false, 3f);
+            EditorGUI.DrawRect(accentRect, GetAccentColor());
+
+            EditorGUILayout.Space(6f);
+            EditorGUILayout.LabelField(ToolTitle, windowTitleStyle);
+            EditorGUILayout.LabelField(
+                "Optimize selected scene meshes with quality-aware simplification and clean asset output.",
+                windowSubtitleStyle);
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawSectionHeader(string title, string subtitle)
+        {
+            EditorGUILayout.LabelField(title, sectionTitleStyle);
+            if (!string.IsNullOrEmpty(subtitle))
+            {
+                EditorGUILayout.LabelField(subtitle, sectionSubtitleStyle);
+            }
+
+            EditorGUILayout.Space(4f);
+        }
+
+        private void DrawSelectionSummary(SelectionSummary summary)
+        {
+            EditorGUILayout.Space(2f);
+            EditorGUILayout.LabelField("Hierarchy Statistics", subsectionTitleStyle);
+            EditorGUILayout.Space(2f);
+
+            Color primaryMetricColor = GetAccentColor();
+            Color geometryMetricColor = EditorGUIUtility.isProSkin
+                ? new Color(0.98f, 0.75f, 0.36f, 1f)
+                : new Color(0.75f, 0.42f, 0.05f, 1f);
+
+            DrawSelectionMetricRow("Renderers", summary.RendererCount.ToString("N0"), primaryMetricColor, false);
+            DrawSelectionMetricRow("Mesh Colliders", summary.MeshColliderCount.ToString("N0"), primaryMetricColor, true);
+            DrawSelectionMetricRow("Unique Meshes", summary.UniqueMeshCount.ToString("N0"), primaryMetricColor, false);
+
+            EditorGUILayout.Space(4f);
+            DrawSelectionMetricRow("Scene Triangles", summary.TriangleCount.ToString("N0"), geometryMetricColor, true);
+            DrawSelectionMetricRow("Scene Vertices", summary.VertexCount.ToString("N0"), geometryMetricColor, false);
+        }
+
+        private void DrawSelectionMetricRow(string label, string value, Color valueColor, bool alternateRow)
+        {
+            Rect rowRect = EditorGUILayout.GetControlRect(false, 24f);
+            Rect backgroundRect = new Rect(rowRect.x + 2f, rowRect.y + 1f, rowRect.width - 4f, rowRect.height - 2f);
+
+            Color rowBackground = EditorGUIUtility.isProSkin
+                ? (alternateRow ? new Color(1f, 1f, 1f, 0.05f) : new Color(1f, 1f, 1f, 0.025f))
+                : (alternateRow ? new Color(0f, 0f, 0f, 0.05f) : new Color(0f, 0f, 0f, 0.025f));
+            EditorGUI.DrawRect(backgroundRect, rowBackground);
+
+            Rect labelRect = new Rect(backgroundRect.x + 8f, backgroundRect.y + 2f, Mathf.Max(150f, backgroundRect.width * 0.57f), backgroundRect.height - 4f);
+            Rect valueRect = new Rect(labelRect.xMax + 6f, backgroundRect.y + 2f, Mathf.Max(60f, backgroundRect.xMax - labelRect.xMax - 12f), backgroundRect.height - 4f);
+
+            EditorGUI.LabelField(labelRect, label, summaryMetricLabelStyle);
+
+            Color previousColor = GUI.color;
+            GUI.color = valueColor;
+            EditorGUI.LabelField(valueRect, value, summaryMetricValueStyle);
+            GUI.color = previousColor;
+        }
+
+        private void DrawCreditsTab()
+        {
+            creditsScrollPosition = EditorGUILayout.BeginScrollView(creditsScrollPosition);
+
+            EditorGUILayout.BeginVertical(sectionContainerStyle);
+            DrawSectionHeader("Credits", "Project and author information.");
+
+            EditorGUILayout.LabelField("Creator", creditCreatorName);
+            EditorGUILayout.LabelField("Company", creditCompanyName);
+            EditorGUILayout.LabelField("Copyright", creditCopyright);
+
+            EditorGUILayout.Space(6f);
+            EditorGUILayout.LabelField("Profiles", subsectionTitleStyle);
+            DrawProfileRow("LinkedIn", creditLinkedInUrl);
+            DrawProfileRow("GitHub", creditGitHubUrl);
+
+            EditorGUILayout.Space(8f);
+            EditorGUILayout.HelpBox("Thanks for using MeshOptix.\nThis tool is distributed under the MIT License.", MessageType.None);
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.Space(6f);
+            EditorGUILayout.EndScrollView();
+        }
+
+        private static void DrawProfileRow(string label, string url)
+        {
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.PrefixLabel(label);
+
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.TextField(url);
+            }
+
+            using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(url)))
+            {
+                if (GUILayout.Button("Open", GUILayout.Width(54f)))
+                {
+                    Application.OpenURL(url);
+                }
+            }
+
+            EditorGUILayout.EndHorizontal();
+        }
+
         private void OnGUI()
         {
+            EnsureStyles();
+
+            DrawWindowHeader();
+
+            selectedTabIndex = GUILayout.Toolbar(selectedTabIndex, WindowTabs, GUILayout.Height(24f));
+            EditorGUILayout.Space(4f);
+
+            if (selectedTabIndex == 1)
+            {
+                DrawCreditsTab();
+                return;
+            }
+
             GameObject selectedObject = Selection.activeGameObject;
             SelectionSummary summary = SelectionSummary.Build(selectedObject, includeInactiveChildren);
 
-            EditorGUILayout.LabelField("Selected Scene Object", EditorStyles.boldLabel);
+            windowScrollPosition = EditorGUILayout.BeginScrollView(windowScrollPosition);
+
+            EditorGUILayout.BeginVertical(sectionContainerStyle);
+            DrawSectionHeader("Selected Scene Object", "Select a scene instance to inspect and optimize.");
 
             using (new EditorGUI.DisabledScope(true))
             {
@@ -101,11 +343,15 @@ namespace Brainy.EditorTools
             }
             else
             {
-                EditorGUILayout.HelpBox(summary.BuildMessage(), MessageType.None);
+                DrawSelectionSummary(summary);
             }
 
-            EditorGUILayout.Space(6f);
-            EditorGUILayout.LabelField("Simplification Settings", EditorStyles.boldLabel);
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.Space(8f);
+
+            EditorGUILayout.BeginVertical(sectionContainerStyle);
+            DrawSectionHeader("Simplification Settings", "Tune reduction amount, preservation behavior, and replacement strategy.");
 
             targetTriangleRatio = EditorGUILayout.Slider(
                 new GUIContent("Target Triangle Ratio", "1 keeps the original density, 0.5 aims for about half the triangles."),
@@ -121,8 +367,8 @@ namespace Brainy.EditorTools
                 new GUIContent("Update Matching MeshColliders", "If a MeshCollider references the same source mesh, switch it to the simplified mesh too."),
                 updateMeshColliders);
 
-            EditorGUILayout.Space(4f);
-            EditorGUILayout.LabelField("Preservation", EditorStyles.miniBoldLabel);
+            EditorGUILayout.Space(6f);
+            EditorGUILayout.LabelField("Preservation", subsectionTitleStyle);
 
             preserveUvSeams = EditorGUILayout.Toggle(
                 new GUIContent("Preserve UV0 Seams", "Keeps texture seams safer at the cost of less reduction."),
@@ -156,8 +402,8 @@ namespace Brainy.EditorTools
                 new GUIContent("Auto Enable Read/Write", "Temporarily toggles model importers to readable when needed, then restores them."),
                 autoMakeSourceMeshesReadable);
 
-            EditorGUILayout.Space(4f);
-            EditorGUILayout.LabelField("Replacement", EditorStyles.miniBoldLabel);
+            EditorGUILayout.Space(6f);
+            EditorGUILayout.LabelField("Replacement", subsectionTitleStyle);
 
             replaceSelection = EditorGUILayout.Toggle(
                 new GUIContent("Replace Selected Object", "Duplicates the selection, optimizes the duplicate, then removes or disables the original."),
@@ -181,24 +427,30 @@ namespace Brainy.EditorTools
                 EditorGUILayout.HelpBox("In-place mode is safer for scene references because it keeps the same GameObject.", MessageType.Info);
             }
 
-            EditorGUILayout.Space(4f);
-            EditorGUILayout.LabelField("Mesh Asset Output", EditorStyles.miniBoldLabel);
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.Space(8f);
+
+            EditorGUILayout.BeginVertical(sectionContainerStyle);
+            DrawSectionHeader("Mesh Asset Output", "Choose where optimized mesh assets are generated.");
 
             EditorGUILayout.BeginHorizontal();
             outputFolder = EditorGUILayout.TextField(outputFolder);
-            if (GUILayout.Button("Browse", GUILayout.Width(70f)))
+            if (GUILayout.Button("Browse", GUILayout.Width(78f)))
             {
                 BrowseForOutputFolder();
             }
 
-            if (GUILayout.Button("Default", GUILayout.Width(70f)))
+            if (GUILayout.Button("Default", GUILayout.Width(78f)))
             {
                 outputFolder = DefaultOutputFolder;
             }
 
             EditorGUILayout.EndHorizontal();
 
-            if (!AssetPathUtility.IsValidAssetsPath(outputFolder))
+            bool isOutputFolderValid = AssetPathUtility.IsValidAssetsPath(outputFolder);
+
+            if (!isOutputFolderValid)
             {
                 EditorGUILayout.HelpBox("Output folder must stay inside the project's Assets folder.", MessageType.Error);
             }
@@ -209,18 +461,29 @@ namespace Brainy.EditorTools
                 selectedObject == null ||
                 EditorUtility.IsPersistent(selectedObject) ||
                 !summary.HasSupportedMeshes ||
-                !AssetPathUtility.IsValidAssetsPath(outputFolder)))
+                !isOutputFolderValid))
             {
-                if (GUILayout.Button("Optimize Selected", GUILayout.Height(34f)))
+                Color previousBackground = GUI.backgroundColor;
+                GUI.backgroundColor = GetAccentColor();
+
+                if (GUILayout.Button("Optimize Selected", primaryButtonStyle))
                 {
                     RunOptimization(selectedObject);
                 }
+
+                GUI.backgroundColor = previousBackground;
             }
+
+            EditorGUILayout.EndVertical();
 
             if (lastReport != null)
             {
+                EditorGUILayout.Space(8f);
                 DrawLastReport();
             }
+
+            EditorGUILayout.Space(6f);
+            EditorGUILayout.EndScrollView();
         }
 
         private void BrowseForOutputFolder()
@@ -234,7 +497,7 @@ namespace Brainy.EditorTools
 
             if (!AssetPathUtility.TryGetCanonicalAssetsPath(selectedFolder, out string canonicalAssetsPath))
             {
-                EditorUtility.DisplayDialog("Scene Mesh Optimizer", "Choose a folder inside this Unity project's Assets folder.", "OK");
+                EditorUtility.DisplayDialog(ToolTitle, "Choose a folder inside this Unity project's Assets folder.", "OK");
                 return;
             }
 
@@ -245,7 +508,7 @@ namespace Brainy.EditorTools
         {
             if (!AssetPathUtility.TryGetCanonicalAssetsPath(outputFolder, out string canonicalOutputFolder))
             {
-                EditorUtility.DisplayDialog("Scene Mesh Optimizer", "Output folder must stay inside this project's Assets folder.", "OK");
+                EditorUtility.DisplayDialog(ToolTitle, "Output folder must stay inside this project's Assets folder.", "OK");
                 return;
             }
 
@@ -273,45 +536,211 @@ namespace Brainy.EditorTools
             {
                 lastReport = SceneMeshOptimizer.Optimize(selectedObject, options);
                 Debug.Log(lastReport.BuildLogMessage());
-                EditorUtility.DisplayDialog("Scene Mesh Optimizer", lastReport.BuildDialogMessage(), "OK");
+                OptimizationResultPopupWindow.Show(lastReport);
                 Repaint();
             }
             catch (OperationCanceledException exception)
             {
                 Debug.Log("[SceneMeshOptimizer] " + exception.Message);
-                EditorUtility.DisplayDialog("Scene Mesh Optimizer", exception.Message, "OK");
+                EditorUtility.DisplayDialog(ToolTitle, exception.Message, "OK");
             }
             catch (Exception exception)
             {
                 Debug.LogException(exception);
-                EditorUtility.DisplayDialog("Scene Mesh Optimizer", exception.Message, "OK");
+                EditorUtility.DisplayDialog(ToolTitle, exception.Message, "OK");
             }
         }
 
         private void DrawLastReport()
         {
-            EditorGUILayout.Space(10f);
-            EditorGUILayout.LabelField("Last Run", EditorStyles.boldLabel);
+            EditorGUILayout.BeginVertical(sectionContainerStyle);
+            DrawSectionHeader("Last Run", "Summary and detailed messages from the most recent optimization.");
             EditorGUILayout.HelpBox(lastReport.BuildSummaryLine(), MessageType.None);
 
             if (lastReport.Messages.Count == 0)
             {
+                EditorGUILayout.EndVertical();
                 return;
             }
 
-            reportScrollPosition = EditorGUILayout.BeginScrollView(reportScrollPosition, GUILayout.MinHeight(120f));
+            reportScrollPosition = EditorGUILayout.BeginScrollView(reportScrollPosition, GUILayout.MinHeight(120f), GUILayout.MaxHeight(220f));
 
             for (int i = 0; i < lastReport.Messages.Count; i++)
             {
-                EditorGUILayout.LabelField("- " + lastReport.Messages[i], EditorStyles.wordWrappedMiniLabel);
+                EditorGUILayout.LabelField("- " + lastReport.Messages[i], reportEntryStyle);
             }
 
             EditorGUILayout.EndScrollView();
+            EditorGUILayout.EndVertical();
+        }
+    }
+
+    internal sealed class OptimizationResultPopupWindow : EditorWindow
+    {
+        private OptimizationReport report;
+        private Vector2 messagesScrollPosition;
+
+        private GUIStyle sectionContainerStyle;
+        private GUIStyle titleStyle;
+        private GUIStyle subtitleStyle;
+        private GUIStyle valueStyle;
+        private GUIStyle beforeValueStyle;
+        private GUIStyle afterValueStyle;
+        private GUIStyle messageEntryStyle;
+
+        public static void Show(OptimizationReport report)
+        {
+            if (report == null)
+            {
+                return;
+            }
+
+            OptimizationResultPopupWindow window = CreateInstance<OptimizationResultPopupWindow>();
+            window.titleContent = new GUIContent("Optimization Results");
+            window.minSize = new Vector2(560f, 470f);
+            window.maxSize = new Vector2(760f, 760f);
+            window.report = report;
+            window.ShowUtility();
+            window.Focus();
+        }
+
+        private void OnEnable()
+        {
+            InitializeStyles();
+        }
+
+        private void OnGUI()
+        {
+            InitializeStyles();
+
+            if (report == null)
+            {
+                EditorGUILayout.HelpBox("No optimization report is available.", MessageType.Info);
+                if (GUILayout.Button("Close", GUILayout.Height(28f)))
+                {
+                    Close();
+                }
+
+                return;
+            }
+
+            EditorGUILayout.Space(8f);
+            EditorGUILayout.LabelField("Optimization Complete", titleStyle);
+            EditorGUILayout.LabelField(report.SelectionName, subtitleStyle);
+
+            EditorGUILayout.Space(8f);
+            EditorGUILayout.BeginVertical(sectionContainerStyle);
+            DrawMetricRow("Renderers touched", report.RendererCount.ToString("N0"));
+            DrawMetricRow("Unique meshes simplified", report.UniqueMeshesSimplified.ToString("N0"));
+            DrawMetricRow("Unique meshes skipped", report.UniqueMeshesSkipped.ToString("N0"));
+            DrawBeforeAfterMetricRow("Triangles", report.OriginalTriangleCount, report.OptimizedTriangleCount);
+            DrawBeforeAfterMetricRow("Vertices", report.OriginalVertexCount, report.OptimizedVertexCount);
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.Space(8f);
+            EditorGUILayout.BeginVertical(sectionContainerStyle);
+            EditorGUILayout.LabelField("Output Folder", EditorStyles.miniBoldLabel);
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.TextField(report.OutputFolder);
+            }
+
+            EditorGUILayout.HelpBox("Scene object changes can be undone. Generated mesh assets remain in the project.", MessageType.None);
+            EditorGUILayout.EndVertical();
+
+            if (report.Messages.Count > 0)
+            {
+                EditorGUILayout.Space(8f);
+                EditorGUILayout.BeginVertical(sectionContainerStyle);
+                EditorGUILayout.LabelField("Details", EditorStyles.miniBoldLabel);
+                messagesScrollPosition = EditorGUILayout.BeginScrollView(messagesScrollPosition, GUILayout.MinHeight(120f), GUILayout.MaxHeight(260f));
+
+                for (int i = 0; i < report.Messages.Count; i++)
+                {
+                    EditorGUILayout.LabelField("- " + report.Messages[i], messageEntryStyle);
+                }
+
+                EditorGUILayout.EndScrollView();
+                EditorGUILayout.EndVertical();
+            }
+
+            EditorGUILayout.Space(10f);
+            if (GUILayout.Button("Close", GUILayout.Height(30f)))
+            {
+                Close();
+            }
+
+            EditorGUILayout.Space(4f);
+        }
+
+        private void DrawMetricRow(string label, string value)
+        {
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(label, GUILayout.Width(190f));
+            EditorGUILayout.LabelField(value, valueStyle);
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawBeforeAfterMetricRow(string label, int before, int after)
+        {
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(label, GUILayout.Width(190f));
+            EditorGUILayout.LabelField(before.ToString("N0"), beforeValueStyle, GUILayout.Width(100f));
+            EditorGUILayout.LabelField("->", GUILayout.Width(20f));
+            EditorGUILayout.LabelField(after.ToString("N0"), afterValueStyle, GUILayout.Width(100f));
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void InitializeStyles()
+        {
+            sectionContainerStyle ??= new GUIStyle(EditorStyles.helpBox)
+            {
+                padding = new RectOffset(12, 12, 10, 10)
+            };
+
+            titleStyle ??= new GUIStyle(EditorStyles.boldLabel)
+            {
+                fontSize = 16,
+                fontStyle = FontStyle.Bold
+            };
+
+            subtitleStyle ??= new GUIStyle(EditorStyles.label)
+            {
+                fontSize = 11,
+                wordWrap = true
+            };
+            subtitleStyle.normal.textColor = EditorGUIUtility.isProSkin ? new Color(0.82f, 0.82f, 0.82f) : new Color(0.26f, 0.26f, 0.26f);
+
+            valueStyle ??= new GUIStyle(EditorStyles.boldLabel)
+            {
+                fontSize = 12
+            };
+
+            beforeValueStyle ??= new GUIStyle(EditorStyles.boldLabel)
+            {
+                fontSize = 12,
+                alignment = TextAnchor.MiddleLeft
+            };
+            beforeValueStyle.normal.textColor = EditorGUIUtility.isProSkin ? new Color(0.98f, 0.45f, 0.45f) : new Color(0.75f, 0.14f, 0.14f);
+
+            afterValueStyle ??= new GUIStyle(EditorStyles.boldLabel)
+            {
+                fontSize = 12,
+                alignment = TextAnchor.MiddleLeft
+            };
+            afterValueStyle.normal.textColor = EditorGUIUtility.isProSkin ? new Color(0.45f, 0.9f, 0.56f) : new Color(0.1f, 0.55f, 0.2f);
+
+            messageEntryStyle ??= new GUIStyle(EditorStyles.wordWrappedMiniLabel)
+            {
+                richText = false
+            };
         }
     }
 
     internal static class SceneMeshOptimizer
     {
+        private const string ToolTitle = "MeshOptix : Scene Mesh Optimizer";
+
         public static OptimizationReport Optimize(GameObject selectedObject, SceneMeshOptimizerOptions options)
         {
             if (selectedObject == null)
@@ -328,7 +757,7 @@ namespace Brainy.EditorTools
 
             Undo.IncrementCurrentGroup();
             int undoGroup = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName("Scene Mesh Optimizer");
+            Undo.SetCurrentGroupName(ToolTitle);
 
             GameObject originalRoot = selectedObject;
             GameObject workingRoot = selectedObject;
@@ -367,7 +796,7 @@ namespace Brainy.EditorTools
                         MeshTarget target = targets[i];
 
                         if (EditorUtility.DisplayCancelableProgressBar(
-                            "Scene Mesh Optimizer",
+                            ToolTitle,
                             "Processing " + target.DisplayName,
                             (i + 1f) / Mathf.Max(1, targets.Count)))
                         {
