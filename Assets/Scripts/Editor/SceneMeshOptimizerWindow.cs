@@ -57,7 +57,7 @@ namespace Brainy.EditorTools
         [SerializeField] private string creditCreatorName = "Hamed Khalifa";
         [SerializeField] private string creditCompanyName = "Hamfox inc";
         [SerializeField] private string creditCopyright = "Copyright (c) 2025 Hamed Khalifa";
-        [SerializeField] private string creditLinkedInUrl = "https://www.linkedin.com/in/ihamfox";
+        [SerializeField] private string creditLinkedInUrl = "https://www.linkedin.com/in/hamed-khalifa/";
         [SerializeField] private string creditGitHubUrl = "https://github.com/Ihamfox";
         [SerializeField] private bool showAdvancedPreservationOptions;
 
