@@ -3,6 +3,7 @@
 MIT License
 
 Copyright(c) 2017-2020 Mattias Edlund
+Copyright (c) 2025 Hamed Khalifa (modifications)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -45,9 +46,9 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using UnityEngine;
-using UnityMeshSimplifier.Internal;
+using Brainy.MeshOptix.Simplification.Internal;
 
-namespace UnityMeshSimplifier
+namespace Brainy.MeshOptix.Simplification
 {
     /// <summary>
     /// The mesh simplifier.

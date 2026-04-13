@@ -1,8 +1,9 @@
-﻿#region License
+#region License
 /*
 MIT License
 
 Copyright(c) 2017-2020 Mattias Edlund
+Copyright (c) 2025 Hamed Khalifa (modifications)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,20 +25,32 @@ SOFTWARE.
 */
 #endregion
 
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
-namespace UnityMeshSimplifier.Internal
+namespace Brainy.MeshOptix.Simplification.Internal
 {
-    internal struct Ref
+    internal struct BorderVertex
     {
-        public int tid;
-        public int tvertex;
+        public int index;
+        public int hash;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Set(int tid, int tvertex)
+        public BorderVertex(int index, int hash)
         {
-            this.tid = tid;
-            this.tvertex = tvertex;
+            this.index = index;
+            this.hash = hash;
+        }
+    }
+
+    internal class BorderVertexComparer : IComparer<BorderVertex>
+    {
+        public static readonly BorderVertexComparer instance = new BorderVertexComparer();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int Compare(BorderVertex x, BorderVertex y)
+        {
+            return x.hash.CompareTo(y.hash);
         }
     }
 }

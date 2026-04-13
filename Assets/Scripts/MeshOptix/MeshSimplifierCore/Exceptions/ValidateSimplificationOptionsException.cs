@@ -1,6 +1,6 @@
 using System;
 
-namespace UnityMeshSimplifier
+namespace Brainy.MeshOptix.Simplification
 {
     /// <summary>
     /// An exception thrown when validating simplification options.
