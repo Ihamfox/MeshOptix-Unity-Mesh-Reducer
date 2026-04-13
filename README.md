@@ -4,6 +4,7 @@ MeshOptix is a Unity editor tool focused on practical scene-level mesh reduction
 
 It helps you reduce triangle and vertex counts on selected scene hierarchies while keeping control over preservation behavior, collider updates, and replacement strategy.
 
+https://github.com/user-attachments/assets/76a90f2f-9e91-4fdc-b7a6-01dbfa51b4a9
 ## What This Project Includes
 
 - A polished Unity Editor window: MeshOptix : Scene Mesh Optimizer
